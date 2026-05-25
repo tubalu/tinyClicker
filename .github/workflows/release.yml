@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name for the release (e.g., v0.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build + publish (macos-14)
+    runs-on: macos-14
+    timeout-minutes: 25
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build universal .app
+        run: make build-universal
+
+      - name: Verify bundle is universal
+        run: |
+          lipo -info build/tinyClicker.app/Contents/MacOS/tinyClicker
+          codesign --display --verbose build/tinyClicker.app || true
+
+      - name: Zip .app (ditto preserves bundle structure)
+        run: |
+          cd build
+          ZIP="tinyClicker-${TAG}.zip"
+          ditto -c -k --sequesterRsrc --keepParent tinyClicker.app "$ZIP"
+          shasum -a 256 "$ZIP" > "${ZIP}.sha256"
+          ls -la
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES_FILE="$(mktemp)"
+          cat > "$NOTES_FILE" <<EOF
+          ## tinyClicker ${TAG}
+
+          macOS universal build (arm64 + x86_64), ad-hoc signed.
+
+          ### Install
+          1. Download \`tinyClicker-${TAG}.zip\` and unzip — you'll get \`tinyClicker.app\`.
+          2. Move it to \`/Applications\`.
+          3. First launch: macOS will warn it's from an unidentified developer (ad-hoc signed). Right-click the app → Open → confirm.
+          4. Grant Accessibility under System Settings → Privacy & Security → Accessibility, then click **Relaunch** in the in-app banner.
+
+          See the README for the full feature list and usage instructions.
+          EOF
+          gh release create "$TAG" \
+            "build/tinyClicker-${TAG}.zip" \
+            "build/tinyClicker-${TAG}.zip.sha256" \
+            --title "tinyClicker ${TAG}" \
+            --notes-file "$NOTES_FILE"
