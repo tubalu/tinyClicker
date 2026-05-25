@@ -54,7 +54,7 @@ final class AppState: ObservableObject {
         // Panic stop hotkey (F10).
         let hotKey = HotKey()
         hotKey.onPress { [weak self] in
-            Task { @MainActor in self?.stopAllPlayback() }
+            Task { @MainActor [weak self] in self?.stopAllPlayback() }
         }
         self.stopHotKey = hotKey
 
@@ -62,7 +62,7 @@ final class AppState: ObservableObject {
         // with the click that stopped it.
         let recordKey = HotKey(keyCode: UInt32(0x65)) // kVK_F9 = 0x65
         recordKey.onPress { [weak self] in
-            Task { @MainActor in self?.toggleRecording() }
+            Task { @MainActor [weak self] in self?.toggleRecording() }
         }
         self.recordHotKey = recordKey
 

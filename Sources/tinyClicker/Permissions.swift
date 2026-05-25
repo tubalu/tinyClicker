@@ -17,7 +17,7 @@ final class PermissionMonitor: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor [weak self] in self?.refresh() }
         }
         observers.append(activate)
 
@@ -28,14 +28,14 @@ final class PermissionMonitor: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor [weak self] in self?.refresh() }
         }
         observers.append(axChange)
 
         // Fallback poll while untrusted, in case the distributed notification
         // doesn't fire for our process's identity.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor [weak self] in self?.refresh() }
         }
     }
 
