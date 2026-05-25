@@ -19,15 +19,7 @@ cd "$ROOT_DIR"
 if [[ "$UNIVERSAL" == "1" ]]; then
     echo "==> Building Swift package ($CONFIG, universal arm64+x86_64)"
     swift build -c "$CONFIG" --arch arm64 --arch x86_64
-    ARM_BIN="$(swift build -c "$CONFIG" --arch arm64   --show-bin-path)/tinyClicker"
-    X86_BIN="$(swift build -c "$CONFIG" --arch x86_64  --show-bin-path)/tinyClicker"
-    if [[ ! -x "$ARM_BIN" || ! -x "$X86_BIN" ]]; then
-        echo "error: per-arch binary missing (arm: $ARM_BIN, x86: $X86_BIN)" >&2
-        exit 1
-    fi
-    mkdir -p "$BUILD_DIR"
-    BIN_PATH="$BUILD_DIR/tinyClicker.universal"
-    lipo -create -output "$BIN_PATH" "$ARM_BIN" "$X86_BIN"
+    BIN_PATH="$(swift build -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path)/tinyClicker"
 else
     echo "==> Building Swift package ($CONFIG)"
     swift build -c "$CONFIG"
@@ -36,6 +28,7 @@ fi
 
 if [[ ! -x "$BIN_PATH" ]]; then
     echo "error: built executable not found at $BIN_PATH" >&2
+    find .build -name tinyClicker -type f 2>&1 | head -20 >&2 || true
     exit 1
 fi
 
