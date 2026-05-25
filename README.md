@@ -24,20 +24,37 @@ A native macOS recording clicker — record mouse clicks and key presses, then l
 ## Build & run
 
 ```bash
-make                      # build  ->  build/tinyClicker.app  (also wipes stale TCC entry, see below)
+make                      # build  ->  build/tinyClicker.app  (host arch; also wipes stale TCC entry)
+make build-universal      # universal arm64+x86_64 .app (needs full Xcode; used by release pipeline)
 make run                  # build + launch a fresh instance
 make icon                 # regenerate Resources/icon.icns
 make permission-reset     # manually wipe the Accessibility TCC entry
 make clean                # remove build artifacts
 ```
 
-Direct script equivalents (if you'd rather skip `make`): `./scripts/build-app.sh` and `swift scripts/generate-icon.swift`.
+Direct script equivalents (if you'd rather skip `make`): `./scripts/build-app.sh` and `swift scripts/generate-icon.swift`. The build script honors `UNIVERSAL=1` and `CONFIG=debug|release` env vars.
 
 To open in Xcode (if installed):
 
 ```bash
 open Package.swift
 ```
+
+## CI / Releases
+
+Two GitHub Actions workflows live under `.github/workflows/`:
+
+- **`ci.yml`** — runs on every push to `main` and on pull requests. Builds the host-arch `.app` on a `macos-14` runner and uploads it as a workflow artifact for 7 days.
+- **`release.yml`** — runs when you push a tag matching `v*` (e.g. `v0.1.0`), or via manual `workflow_dispatch`. Builds a universal `tinyClicker.app`, zips it with `ditto -c -k --sequesterRsrc --keepParent`, computes a SHA-256, and publishes a GitHub Release with both files attached.
+
+To cut a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow will pick it up, build, and publish. The published `.app` is ad-hoc signed — Intel/Apple-Silicon users will get the standard "unidentified developer" prompt on first launch (right-click → Open to bypass). For a smoother distribution experience, set up Developer ID signing (see the section above) and extend the release workflow to use it via repository secrets.
 
 ## Accessibility permission
 
