@@ -48,3 +48,6 @@ secrets/
 *.log
 *.ips
 crash.log
+
+# ----- Antigravity CLI -----
+.antigravitycli/

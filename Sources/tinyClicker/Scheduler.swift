@@ -23,6 +23,8 @@ actor PlaybackScheduler {
     private var drivers: [UUID: Task<Void, Never>] = [:]
     private var specialTask: Task<Void, Never>? = nil
     private(set) var specialActive: Bool = false
+    private var pauseOnMouseMove: Bool = true
+    private var pauseOnOwnWindow: Bool = true
     private static let specialSentinelId = UUID()
 
     /// Returns the id of the recording currently executing, if any.
@@ -34,7 +36,9 @@ actor PlaybackScheduler {
     /// Starts driving every enabled recording in the given order.
     /// The first recording in the array is highest priority.
     /// Stops any previously running drivers first.
-    func startAll(_ recordings: [Recording]) {
+    func startAll(_ recordings: [Recording], pauseOnMouseMove: Bool, pauseOnOwnWindow: Bool) {
+        self.pauseOnMouseMove = pauseOnMouseMove
+        self.pauseOnOwnWindow = pauseOnOwnWindow
         UserActivityMonitor.shared.start()
         stopAllInternal()
         for (index, recording) in recordings.enumerated() where recording.enabled {
@@ -54,7 +58,9 @@ actor PlaybackScheduler {
 
     /// Starts (or restarts with new config) the follow-cursor auto-clicker.
     /// Lowest priority — yields to any macro that wants the slot.
-    func startSpecialClicker(_ config: SpecialClicker) {
+    func startSpecialClicker(_ config: SpecialClicker, pauseOnMouseMove: Bool, pauseOnOwnWindow: Bool) {
+        self.pauseOnMouseMove = pauseOnMouseMove
+        self.pauseOnOwnWindow = pauseOnOwnWindow
         UserActivityMonitor.shared.start()
         specialTask?.cancel()
         guard config.enabled else {
@@ -70,12 +76,14 @@ actor PlaybackScheduler {
                 // Skip the click if the user is actively moving the mouse,
                 // or if the cursor is hovering over any tinyClicker window
                 // (otherwise we'd click our own Stop All button etc.).
-                let userActive = UserActivityMonitor.shared.isUserActive(within: 0.5)
-                let onOwnWindow = await WindowGuard.cursorIsInOwnWindow()
+                let pMove = await self.pauseOnMouseMove
+                let pWindow = await self.pauseOnOwnWindow
+                let userActive = pMove && UserActivityMonitor.shared.isUserActive(within: 0.5)
+                let onOwnWindow = pWindow ? await WindowGuard.cursorIsInOwnWindow() : false
                 if !userActive && !onOwnWindow {
                     _ = await self.acquire(priority: Int.max, recordingId: Self.specialSentinelId)
                     if Task.isCancelled { await self.release(); return }
-                    Self.postClickAtCursor(buttonIdx: buttonIdx)
+                    await Self.postClickAtCursor(buttonIdx: buttonIdx)
                     await self.release()
                 }
                 let nanos = UInt64(interval * 1_000_000_000)
@@ -97,7 +105,7 @@ actor PlaybackScheduler {
         stopAllInternal()
     }
 
-    private static func postClickAtCursor(buttonIdx: Int) {
+    private static func postClickAtCursor(buttonIdx: Int) async {
         let pos = CGEvent(source: nil)?.location ?? .zero
         let button: CGMouseButton = buttonIdx == 1 ? .right : .left
         let downType: CGEventType = buttonIdx == 1 ? .rightMouseDown : .leftMouseDown
@@ -110,6 +118,8 @@ actor PlaybackScheduler {
         ) {
             down.post(tap: .cghidEventTap)
         }
+        // Sleep for a short duration (25ms) to ensure the target UI registers the click.
+        try? await Task.sleep(nanoseconds: 25_000_000)
         if let up = CGEvent(
             mouseEventSource: InputSource.marked,
             mouseType: upType,
@@ -153,7 +163,9 @@ actor PlaybackScheduler {
                 recording,
                 from: cursor,
                 restoring: held,
-                pauseSignal: signal
+                pauseSignal: signal,
+                pauseOnMouseMove: self.pauseOnMouseMove,
+                pauseOnOwnWindow: self.pauseOnOwnWindow
             )
             await release()
 

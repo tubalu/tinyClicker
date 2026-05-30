@@ -9,6 +9,16 @@ final class AppState: ObservableObject {
     @Published var isPlayingAll: Bool = false
     @Published var nowPlayingId: UUID?
     @Published var specialClicker: SpecialClicker = .init()
+    @Published var pauseOnMouseMove: Bool = true {
+        didSet {
+            UserDefaults.standard.set(pauseOnMouseMove, forKey: "tinyClicker.pauseOnMouseMove")
+        }
+    }
+    @Published var pauseOnOwnWindow: Bool = true {
+        didSet {
+            UserDefaults.standard.set(pauseOnOwnWindow, forKey: "tinyClicker.pauseOnOwnWindow")
+        }
+    }
 
     private let store = Store()
     private let recorder = Recorder()
@@ -23,6 +33,18 @@ final class AppState: ObservableObject {
         self.recordings = store.load()
         self.selectedId = recordings.first?.id
         self.specialClicker = SpecialClicker.load()
+        
+        if UserDefaults.standard.object(forKey: "tinyClicker.pauseOnMouseMove") == nil {
+            self.pauseOnMouseMove = true
+        } else {
+            self.pauseOnMouseMove = UserDefaults.standard.bool(forKey: "tinyClicker.pauseOnMouseMove")
+        }
+        
+        if UserDefaults.standard.object(forKey: "tinyClicker.pauseOnOwnWindow") == nil {
+            self.pauseOnOwnWindow = true
+        } else {
+            self.pauseOnOwnWindow = UserDefaults.standard.bool(forKey: "tinyClicker.pauseOnOwnWindow")
+        }
 
         // Debounced persistence on any change.
         saveDebounce = $recordings
@@ -44,7 +66,7 @@ final class AppState: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if self.isPlayingAll && config.enabled {
-                        await self.scheduler.startSpecialClicker(config)
+                        await self.scheduler.startSpecialClicker(config, pauseOnMouseMove: self.pauseOnMouseMove, pauseOnOwnWindow: self.pauseOnOwnWindow)
                     } else {
                         await self.scheduler.stopSpecialClicker()
                     }
@@ -96,7 +118,7 @@ final class AppState: ObservableObject {
         recordings.move(fromOffsets: source, toOffset: destination)
         // If playback was running, reorder changes priorities — restart.
         if isPlayingAll {
-            Task { await scheduler.startAll(recordings) }
+            Task { await scheduler.startAll(recordings, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow) }
         }
     }
 
@@ -104,7 +126,7 @@ final class AppState: ObservableObject {
         guard let idx = recordings.firstIndex(where: { $0.id == recording.id }) else { return }
         recordings[idx] = recording
         if isPlayingAll {
-            Task { await scheduler.startAll(recordings) }
+            Task { await scheduler.startAll(recordings, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow) }
         }
     }
 
@@ -145,9 +167,9 @@ final class AppState: ObservableObject {
         let specialSnapshot = specialClicker
         isPlayingAll = true
         Task {
-            await scheduler.startAll(snapshot)
+            await scheduler.startAll(snapshot, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow)
             if specialSnapshot.enabled {
-                await scheduler.startSpecialClicker(specialSnapshot)
+                await scheduler.startSpecialClicker(specialSnapshot, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow)
             }
         }
     }

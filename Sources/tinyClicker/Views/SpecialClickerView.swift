@@ -57,6 +57,18 @@ struct SpecialClickerView: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+                .padding(.vertical, 2)
+
+            Text("Safety Auto-Pauses")
+                .font(.caption.bold())
+                .foregroundColor(.secondary)
+
+            Toggle("Pause on Mouse Motion", isOn: $state.pauseOnMouseMove)
+                .font(.caption)
+            Toggle("Pause when Cursor Over Window", isOn: $state.pauseOnOwnWindow)
+                .font(.caption)
         }
         .padding(10)
         .background(
