@@ -103,6 +103,10 @@ final class Recorder {
             position = event.location
             button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
         case .keyDown:
+            // macOS emits synthetic auto-repeat keyDowns while a key is held.
+            // Skip them so a hold becomes a single keyDown … keyUp pair; the
+            // gap between them preserves the hold duration on playback.
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return }
             kind = .keyDown
             keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         case .keyUp:

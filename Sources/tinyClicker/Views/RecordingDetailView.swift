@@ -69,23 +69,34 @@ struct RecordingDetailView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                EventTable(events: recording.events)
+                EventTable(recording: recording)
             }
         }
         .padding(12)
     }
 }
 
+/// Inline-editable table of recorded events. Each cell edit funnels through
+/// `state.update(_:)` — the same debounced-autosave path used by the name and
+/// interval fields above — so edits persist automatically.
 struct EventTable: View {
-    let events: [RecordedEvent]
+    @EnvironmentObject var state: AppState
+    let recording: Recording
+
+    /// Editing is locked while capturing or running so we never mutate a
+    /// recording that the recorder/scheduler is actively touching.
+    private var isEditable: Bool { !state.isRecording && !state.isPlayingAll }
 
     var body: some View {
-        Table(events) {
+        Table(recording.events) {
             TableColumn("Time") { ev in
-                Text(String(format: "%.3fs", ev.timestamp))
+                TextField("", value: binding(for: ev).timestamp,
+                          format: .number.precision(.fractionLength(0...3)))
                     .font(.system(.caption, design: .monospaced))
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(!isEditable)
             }
-            .width(min: 70, ideal: 80, max: 100)
+            .width(min: 70, ideal: 80, max: 110)
 
             TableColumn("Kind") { ev in
                 Text(ev.kind.rawValue)
@@ -94,30 +105,104 @@ struct EventTable: View {
             .width(min: 80, ideal: 90, max: 110)
 
             TableColumn("Detail") { ev in
-                Text(detail(for: ev))
-                    .font(.system(.caption, design: .monospaced))
+                EventDetailEditor(event: binding(for: ev), editable: isEditable)
+            }
+
+            TableColumn("") { ev in
+                Button(role: .destructive) {
+                    delete(ev)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("Delete this event")
+                .disabled(!isEditable)
+            }
+            .width(28)
+        }
+    }
+
+    /// A write-through binding for a single event, keyed by stable id so it
+    /// survives re-renders and reorders.
+    private func binding(for event: RecordedEvent) -> Binding<RecordedEvent> {
+        Binding(
+            get: { recording.events.first { $0.id == event.id } ?? event },
+            set: { newValue in
+                guard let idx = recording.events.firstIndex(where: { $0.id == event.id }) else { return }
+                var copy = recording
+                copy.events[idx] = newValue
+                state.update(copy)
+            }
+        )
+    }
+
+    private func delete(_ event: RecordedEvent) {
+        var copy = recording
+        copy.events.removeAll { $0.id == event.id }
+        state.update(copy)
+    }
+}
+
+/// Renders the editable detail of one event: coordinates + button for mouse
+/// events, keyCode for key events.
+private struct EventDetailEditor: View {
+    @Binding var event: RecordedEvent
+    let editable: Bool
+
+    var body: some View {
+        Group {
+            switch event.kind {
+            case .mouseDown, .mouseUp:
+                HStack(spacing: 4) {
+                    Text("btn")
+                    TextField("", value: buttonBinding, format: .number)
+                        .frame(width: 32)
+                    Text("@ (")
+                    TextField("", value: xBinding, format: .number.precision(.fractionLength(0)))
+                        .frame(width: 52)
+                    Text(",")
+                    TextField("", value: yBinding, format: .number.precision(.fractionLength(0)))
+                        .frame(width: 52)
+                    Text(")")
+                }
+            case .keyDown, .keyUp:
+                HStack(spacing: 4) {
+                    Text("keyCode")
+                    TextField("", value: keyCodeBinding, format: .number)
+                        .frame(width: 56)
+                }
             }
         }
+        .font(.system(.caption, design: .monospaced))
+        .textFieldStyle(.roundedBorder)
+        .disabled(!editable)
     }
 
-    private func detail(for event: RecordedEvent) -> String {
-        switch event.kind {
-        case .mouseDown, .mouseUp:
-            let x = event.position.map { String(format: "%.0f", $0.x) } ?? "?"
-            let y = event.position.map { String(format: "%.0f", $0.y) } ?? "?"
-            let btn = event.button.map(buttonName(_:)) ?? "?"
-            return "\(btn) @ (\(x), \(y))"
-        case .keyDown, .keyUp:
-            let code = event.keyCode.map(String.init) ?? "?"
-            return "keyCode \(code)"
-        }
+    private var xBinding: Binding<Double> {
+        Binding(
+            get: { Double(event.position?.x ?? 0) },
+            set: { event.position = CGPoint(x: $0, y: Double(event.position?.y ?? 0)) }
+        )
     }
 
-    private func buttonName(_ idx: Int) -> String {
-        switch idx {
-        case 0: return "left"
-        case 1: return "right"
-        default: return "btn\(idx)"
-        }
+    private var yBinding: Binding<Double> {
+        Binding(
+            get: { Double(event.position?.y ?? 0) },
+            set: { event.position = CGPoint(x: Double(event.position?.x ?? 0), y: $0) }
+        )
+    }
+
+    private var buttonBinding: Binding<Int> {
+        Binding(
+            get: { event.button ?? 0 },
+            set: { event.button = max(0, $0) }
+        )
+    }
+
+    private var keyCodeBinding: Binding<Int> {
+        Binding(
+            get: { Int(event.keyCode ?? 0) },
+            set: { event.keyCode = UInt16(max(0, min(Int(UInt16.max), $0))) }
+        )
     }
 }

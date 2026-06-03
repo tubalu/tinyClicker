@@ -11,10 +11,10 @@ enum RecordedEventKind: String, Codable {
 struct RecordedEvent: Codable, Identifiable, Equatable {
     let id: UUID
     let kind: RecordedEventKind
-    let timestamp: TimeInterval
-    let position: CGPoint?
-    let button: Int?
-    let keyCode: UInt16?
+    var timestamp: TimeInterval
+    var position: CGPoint?
+    var button: Int?
+    var keyCode: UInt16?
     let flags: UInt64?
 
     init(

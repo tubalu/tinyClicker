@@ -4,8 +4,9 @@ A native macOS recording clicker — record mouse clicks and key presses, then l
 
 ## Features
 
-- Records mouse-down / mouse-up (left/right/other) and key-down / key-up with modifier flags.
+- Records mouse-down / mouse-up (left/right/other) and key-down / key-up with modifier flags. A held key is captured as a single key-down…key-up pair (OS auto-repeat events are filtered out), so the hold duration is preserved on replay instead of producing a burst of repeated presses.
 - Replays with timing fidelity (preserves original inter-event delays within a recording).
+- **Editable event log** — after capture, edit each event's timing, mouse coordinates / button, or key code inline in the detail table, and delete unwanted events. Edits autosave. (Editing is locked while recording or while Play All is running.)
 - Per-recording interval between iterations; loops indefinitely until stopped.
 - Drag-to-reorder list — list order **is** the priority order (top = highest).
 - Pause/resume preemption with held-input safety (releases stuck buttons/keys on pause, re-presses on resume).
@@ -85,7 +86,7 @@ With a stable signing identity the code requirement stays constant across rebuil
 
 1. Click **New** in the toolbar (or ⌘N) to create a recording.
 2. Select it, then press **F9** (or click **Record**) to start. Perform mouse clicks / key presses. Press **F9** again to stop — using the hotkey avoids capturing the stop click itself.
-3. Set the interval (seconds between iterations) in the detail pane.
+3. Set the interval (seconds between iterations) in the detail pane. You can also fine-tune individual captured events — edit their time / coordinates / key code directly in the event table, or delete rows with the trash button.
 4. Check **Enabled** on each recording you want to participate in playback.
 5. Drag rows in the sidebar to set priority (top = highest).
 6. (Optional) In the **Follow Cursor Clicker** section at the bottom of the sidebar, set a rate, choose Left or Right button, and toggle **Enabled** to arm it for the next Play All session.
@@ -115,7 +116,7 @@ With a stable signing identity the code requirement stays constant across rebuil
 
 - Mouse movement paths are not captured — only click positions. Replay teleports the cursor between clicks.
 - Scroll-wheel events are not recorded.
-- Recordings cannot be edited after capture (only re-recorded).
+- Event editing covers timing, mouse coordinates/button, and key codes; the event *kind* and modifier flags are fixed at capture, and new events can't be inserted from scratch (only re-recorded).
 - Hotkeys are hard-coded (F9 record toggle, F10 panic stop) and not user-configurable yet.
 - The user-input pause and own-window pause both use fixed thresholds (0.5s settle for motion; immediate for window) — no slider to tune them.
 - No automated tests — global input automation is awkward to test reliably; verification is manual (see `~/.claude/plans/plan-create-macos-quiet-flute.md`).
