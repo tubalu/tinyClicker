@@ -13,7 +13,7 @@ A native macOS recording clicker — record mouse clicks and key presses, then l
 - **Follow Cursor Clicker** — a separate auto-clicker that always clicks at the *current* cursor position (so it follows wherever the cursor is moved). Lowest priority: yields while any recording is mid-playback, fires during the gap between iterations. Configurable click rate (0.1–30 Hz) and button (left/right). The Enabled toggle is **armed state** — actual clicking only happens while a Play All session is running.
 - **Yields to user input** — whenever you move the mouse, all playback (macros + Follow Cursor Clicker) silently pauses; it resumes ~0.5s after motion stops. tinyClicker's own posted events are filtered out via a source-data marker, so a macro's cursor teleports don't accidentally pause the macro.
 - **Pauses when cursor is on tinyClicker's window** — so you can interact with the app while playback is armed without it stomping over you. (Caveat: if a macro is recorded to click somewhere inside tinyClicker, it will pause on that click and only resume when the cursor leaves the window — press F10 to fully stop.)
-- Global hotkeys: **F9** toggles record start/stop (so the click that ends recording doesn't get captured); **F10** is a panic stop for all playback (macros + follow-cursor clicker).
+- Global hotkeys: **F9** toggles record start/stop (so the click that ends recording doesn't get captured); **F10** toggles Play All — starts playback when idle, stops all playback (macros + follow-cursor clicker) when running, so it still works as a panic stop.
 - Persists recordings to `~/Library/Application Support/tinyClicker/recordings.json` and the Follow Cursor Clicker config to `UserDefaults`.
 
 ## Requirements
@@ -90,10 +90,10 @@ With a stable signing identity the code requirement stays constant across rebuil
 4. Check **Enabled** on each recording you want to participate in playback.
 5. Drag rows in the sidebar to set priority (top = highest).
 6. (Optional) In the **Follow Cursor Clicker** section at the bottom of the sidebar, set a rate, choose Left or Right button, and toggle **Enabled** to arm it for the next Play All session.
-7. Click **Play All**. The first eligible recording starts immediately; others wait per priority. If the Follow Cursor Clicker is armed, it runs alongside the macros and yields to them.
+7. Click **Play All** (or press **F10**). The first eligible recording starts immediately; others wait per priority. If the Follow Cursor Clicker is armed, it runs alongside the macros and yields to them.
 8. Move the mouse → all playback pauses; stop moving for ~0.5s → it resumes.
 9. Move the cursor over tinyClicker's window → all playback pauses; move it away → it resumes.
-10. Press **F10** at any time to stop everything.
+10. Press **F10** at any time to stop everything (it's a toggle — pressing it again while idle starts Play All).
 
 ## Architecture
 
@@ -106,7 +106,7 @@ With a stable signing identity the code requirement stays constant across rebuil
 | `SpecialClicker.swift` | Follow-cursor clicker config + UserDefaults persistence |
 | `Store.swift` | JSON load/save for recordings |
 | `Permissions.swift` | Accessibility trust check (uncached) + distributed-notification listener + Quit/Relaunch helpers |
-| `HotKey.swift` | Carbon `RegisterEventHotKey` for F9 (record toggle) and F10 (panic stop) |
+| `HotKey.swift` | Carbon `RegisterEventHotKey` for F9 (record toggle) and F10 (Play All toggle / panic stop) |
 | `UserActivityMonitor.swift` | Singleton `CGEventTap` tracking user mouse-motion timestamps; filters out our own posted events via source-data marker |
 | `WindowGuard.swift` | Static helper: is the cursor currently inside any of tinyClicker's visible windows? |
 | `AppState.swift` | `@MainActor ObservableObject` tying it all together |
@@ -117,7 +117,7 @@ With a stable signing identity the code requirement stays constant across rebuil
 - Mouse movement paths are not captured — only click positions. Replay teleports the cursor between clicks.
 - Scroll-wheel events are not recorded.
 - Event editing covers timing, mouse coordinates/button, and key codes; the event *kind* and modifier flags are fixed at capture, and new events can't be inserted from scratch (only re-recorded).
-- Hotkeys are hard-coded (F9 record toggle, F10 panic stop) and not user-configurable yet.
+- Hotkeys are hard-coded (F9 record toggle, F10 Play All toggle) and not user-configurable yet.
 - The user-input pause and own-window pause both use fixed thresholds (0.5s settle for motion; immediate for window) — no slider to tune them.
 - No automated tests — global input automation is awkward to test reliably; verification is manual (see `~/.claude/plans/plan-create-macos-quiet-flute.md`).
 # tinyClicker

@@ -48,7 +48,7 @@ struct ToolbarView: View {
                 Button {
                     state.playAll()
                 } label: {
-                    Label("Play All", systemImage: "play.fill")
+                    Label("Play All (F10)", systemImage: "play.fill")
                 }
                 .disabled(
                     state.isRecording

@@ -23,7 +23,7 @@ final class AppState: ObservableObject {
     private let store = Store()
     private let recorder = Recorder()
     private let scheduler = PlaybackScheduler()
-    private var stopHotKey: HotKey?
+    private var playAllHotKey: HotKey?
     private var recordHotKey: HotKey?
     private var saveDebounce: AnyCancellable?
     private var specialDebounce: AnyCancellable?
@@ -73,12 +73,13 @@ final class AppState: ObservableObject {
                 }
             }
 
-        // Panic stop hotkey (F10).
+        // Play All start/stop toggle (F10). Stopping works from anywhere,
+        // so it still doubles as the panic key.
         let hotKey = HotKey()
         hotKey.onPress { [weak self] in
-            Task { @MainActor [weak self] in self?.stopAllPlayback() }
+            Task { @MainActor [weak self] in self?.togglePlayAll() }
         }
-        self.stopHotKey = hotKey
+        self.playAllHotKey = hotKey
 
         // Record start/stop toggle (F9) — avoids contaminating the recording
         // with the click that stopped it.
@@ -172,6 +173,20 @@ final class AppState: ObservableObject {
                 await scheduler.startSpecialClicker(specialSnapshot, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow)
             }
         }
+    }
+
+    func togglePlayAll() {
+        if isPlayingAll {
+            stopAllPlayback()
+            return
+        }
+        guard !isRecording else { return }
+        // Same condition that enables the toolbar's Play All button —
+        // avoids entering a phantom "playing" state with nothing to run.
+        let hasPlayable = recordings.contains { $0.enabled && !$0.events.isEmpty }
+            || specialClicker.enabled
+        guard hasPlayable else { return }
+        playAll()
     }
 
     func stopAllPlayback() {
