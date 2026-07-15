@@ -72,6 +72,18 @@ struct RecordingRow: View {
                     .font(.caption)
                     .foregroundColor(.green)
             }
+
+            Button {
+                var copy = recording
+                copy.locked.toggle()
+                state.update(copy)
+            } label: {
+                Image(systemName: recording.locked ? "lock.fill" : "lock.open")
+                    .foregroundColor(recording.locked ? .secondary : .secondary.opacity(0.4))
+            }
+            .buttonStyle(.borderless)
+            .disabled(state.isPlayingAll)
+            .help(recording.locked ? "Locked — click to unlock" : "Click to lock")
         }
         .padding(.vertical, 2)
     }

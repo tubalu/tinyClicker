@@ -85,7 +85,7 @@ struct EventTable: View {
 
     /// Editing is locked while capturing or running so we never mutate a
     /// recording that the recorder/scheduler is actively touching.
-    private var isEditable: Bool { !state.isRecording && !state.isPlayingAll }
+    private var isEditable: Bool { !state.isRecording && !state.isPlayingAll && !recording.locked }
 
     var body: some View {
         Table(recording.events) {

@@ -111,6 +111,7 @@ final class AppState: ObservableObject {
     }
 
     func deleteRecording(id: UUID) {
+        guard recordings.first(where: { $0.id == id })?.locked != true else { return }
         recordings.removeAll { $0.id == id }
         if selectedId == id { selectedId = recordings.first?.id }
     }
@@ -133,10 +134,16 @@ final class AppState: ObservableObject {
 
     // MARK: - Record
 
+    var isSelectedRecordingLocked: Bool {
+        guard let id = selectedId else { return false }
+        return recordings.first(where: { $0.id == id })?.locked ?? false
+    }
+
     func startRecording() {
         guard !isRecording else { return }
         guard let id = selectedId,
-              recordings.firstIndex(where: { $0.id == id }) != nil else { return }
+              let idx = recordings.firstIndex(where: { $0.id == id }),
+              !recordings[idx].locked else { return }
         let started = recorder.start()
         if started {
             isRecording = true
@@ -148,7 +155,8 @@ final class AppState: ObservableObject {
         let events = recorder.stop()
         isRecording = false
         guard let id = selectedId,
-              let idx = recordings.firstIndex(where: { $0.id == id }) else { return }
+              let idx = recordings.firstIndex(where: { $0.id == id }),
+              !recordings[idx].locked else { return }
         recordings[idx].events = events
     }
 

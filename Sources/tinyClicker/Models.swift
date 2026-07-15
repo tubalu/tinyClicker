@@ -42,19 +42,39 @@ struct Recording: Codable, Identifiable, Equatable {
     var events: [RecordedEvent]
     var intervalSeconds: Double
     var enabled: Bool
+    var locked: Bool
 
     init(
         id: UUID = UUID(),
         name: String = "Untitled",
         events: [RecordedEvent] = [],
         intervalSeconds: Double = 2.0,
-        enabled: Bool = false
+        enabled: Bool = false,
+        locked: Bool = false
     ) {
         self.id = id
         self.name = name
         self.events = events
         self.intervalSeconds = intervalSeconds
         self.enabled = enabled
+        self.locked = locked
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, events, intervalSeconds, enabled, locked
+    }
+
+    /// Hand-written to stay backward compatible with `recordings.json` files
+    /// saved before `locked` existed — synthesized `Decodable` would throw
+    /// on the missing key instead of falling back to `false`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        events = try container.decode([RecordedEvent].self, forKey: .events)
+        intervalSeconds = try container.decode(Double.self, forKey: .intervalSeconds)
+        enabled = try container.decode(Bool.self, forKey: .enabled)
+        locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
     }
 
     var duration: TimeInterval {

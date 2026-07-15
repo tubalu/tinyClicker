@@ -32,7 +32,13 @@ struct ToolbarView: View {
                 } label: {
                     Label("Record (F9)", systemImage: "record.circle")
                 }
-                .disabled(state.selectedId == nil || state.isPlayingAll || !permissions.isTrusted)
+                .disabled(
+                    state.selectedId == nil
+                    || state.isPlayingAll
+                    || !permissions.isTrusted
+                    || state.isSelectedRecordingLocked
+                )
+                .help(state.isSelectedRecordingLocked ? "Recording is locked" : "")
             }
 
             Divider().frame(height: 18)
