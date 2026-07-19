@@ -24,18 +24,16 @@ struct SpecialClickerView: View {
             HStack {
                 Text("Rate")
                     .frame(width: 50, alignment: .leading)
-                Slider(
-                    value: Binding(
-                        get: { state.specialClicker.clicksPerSecond },
-                        set: { state.specialClicker.clicksPerSecond = $0 }
-                    ),
-                    in: SpecialClicker.minRate...SpecialClicker.maxRate,
-                    step: 0.5
-                )
-                Text(String(format: "%.1f/s", state.specialClicker.clampedRate))
-                    .font(.caption)
-                    .monospacedDigit()
-                    .frame(width: 50, alignment: .trailing)
+                Picker("", selection: Binding(
+                    get: { state.specialClicker.clampedRate },
+                    set: { state.specialClicker.clicksPerSecond = $0 }
+                )) {
+                    ForEach(SpecialClicker.rateOptions, id: \.self) { rate in
+                        Text("\(Int(rate))/s").tag(rate)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
             HStack {

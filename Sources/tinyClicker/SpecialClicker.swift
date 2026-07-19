@@ -13,14 +13,21 @@ enum ClickButton: String, Codable, CaseIterable, Identifiable {
 /// playback phase, fires freely during recordings' interval gaps.
 struct SpecialClicker: Codable, Equatable {
     var enabled: Bool = false
-    var clicksPerSecond: Double = 5.0
+    var clicksPerSecond: Double = 2.0
     var button: ClickButton = .left
 
-    static let minRate: Double = 0.1
-    static let maxRate: Double = 30.0
+    /// The only selectable rates (clicks/second). Max is 20.
+    static let rateOptions: [Double] = [1, 2, 20]
 
+    static let minRate: Double = rateOptions.first!
+    static let maxRate: Double = rateOptions.last!
+
+    /// Snap any stored value to the nearest allowed option so persisted
+    /// or out-of-range values always resolve to a valid choice.
     var clampedRate: Double {
-        min(Self.maxRate, max(Self.minRate, clicksPerSecond))
+        Self.rateOptions.min(by: {
+            abs($0 - clicksPerSecond) < abs($1 - clicksPerSecond)
+        }) ?? Self.maxRate
     }
 
     var intervalSeconds: Double { 1.0 / clampedRate }
