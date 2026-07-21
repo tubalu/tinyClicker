@@ -75,7 +75,7 @@ final class Player {
                 await releaseAll(currentlyHeld)
                 return .paused(at: i, held: currentlyHeld)
             }
-            let ownWindow = pauseOnOwnWindow ? await WindowGuard.cursorIsInOwnWindow() : false
+            let ownWindow = pauseOnOwnWindow ? WindowGuard.cursorIsInOwnWindow() : false
             if ownWindow {
                 await releaseAll(currentlyHeld)
                 return .paused(at: i, held: currentlyHeld)
@@ -101,7 +101,7 @@ final class Player {
                         await releaseAll(currentlyHeld)
                         return .paused(at: i, held: currentlyHeld)
                     }
-                    let innerOwnWindow = pauseOnOwnWindow ? await WindowGuard.cursorIsInOwnWindow() : false
+                    let innerOwnWindow = pauseOnOwnWindow ? WindowGuard.cursorIsInOwnWindow() : false
                     if innerOwnWindow {
                         await releaseAll(currentlyHeld)
                         return .paused(at: i, held: currentlyHeld)

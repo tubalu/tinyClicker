@@ -28,7 +28,15 @@ actor PlaybackScheduler {
     private static let specialSentinelId = UUID()
 
     /// Returns the id of the recording currently executing, if any.
-    func currentlyRunningId() -> UUID? { runningId }
+    ///
+    /// The special clicker's sentinel is deliberately NOT reported: it takes
+    /// and releases the slot on every click (up to 20×/sec), and since the
+    /// sentinel matches no recording it would only churn `AppState`'s
+    /// `@Published nowPlayingId` — re-rendering every view for no visible
+    /// change. Real macro playback holds the slot for its whole run.
+    func currentlyRunningId() -> UUID? {
+        runningId == Self.specialSentinelId ? nil : runningId
+    }
 
     /// Returns true if any driver is active (whether running or waiting).
     func hasActiveDrivers() -> Bool { !drivers.isEmpty }
@@ -39,7 +47,6 @@ actor PlaybackScheduler {
     func startAll(_ recordings: [Recording], pauseOnMouseMove: Bool, pauseOnOwnWindow: Bool) {
         self.pauseOnMouseMove = pauseOnMouseMove
         self.pauseOnOwnWindow = pauseOnOwnWindow
-        UserActivityMonitor.shared.start()
         stopAllInternal()
         for (index, recording) in recordings.enumerated() where recording.enabled {
             let driver = Task { [weak self] in
@@ -48,12 +55,33 @@ actor PlaybackScheduler {
             }
             drivers[recording.id] = driver
         }
+        // Started only if something will actually play, so a no-op start
+        // never installs a tap that nothing will stop.
+        if drivers.isEmpty {
+            stopMonitorIfIdle()
+        } else {
+            UserActivityMonitor.shared.start()
+        }
     }
 
     /// Cancels every macro driver and any in-flight macro playback.
     /// Does NOT touch the special clicker. Idempotent.
     func stopAll() {
         stopAllInternal()
+        stopMonitorIfIdle()
+    }
+
+    /// Balances the `UserActivityMonitor.shared.start()` calls in `startAll`
+    /// and `startSpecialClicker`. The tap listens for `mouseMoved` — the
+    /// highest-frequency event on macOS — so leaving it installed while the
+    /// app is idle taxes every mouse movement for the rest of the process's
+    /// life. Only safe once `drivers` / `specialTask` have been cleared,
+    /// which is why this is called from the public stop entry points and NOT
+    /// from `stopAllInternal()` (which `startAll` also runs before
+    /// immediately restarting).
+    private func stopMonitorIfIdle() {
+        guard drivers.isEmpty, specialTask == nil else { return }
+        UserActivityMonitor.shared.stop()
     }
 
     /// Starts (or restarts with new config) the follow-cursor auto-clicker.
@@ -61,25 +89,34 @@ actor PlaybackScheduler {
     func startSpecialClicker(_ config: SpecialClicker, pauseOnMouseMove: Bool, pauseOnOwnWindow: Bool) {
         self.pauseOnMouseMove = pauseOnMouseMove
         self.pauseOnOwnWindow = pauseOnOwnWindow
-        UserActivityMonitor.shared.start()
         specialTask?.cancel()
         guard config.enabled else {
+            // Must clear the handle, not just cancel it: `stopMonitorIfIdle`
+            // treats a non-nil `specialTask` as "still running" and would
+            // never tear the tap down again.
+            specialTask = nil
             specialActive = false
+            stopMonitorIfIdle()
             return
         }
+        // Started only once we know we'll actually click, so a disabled
+        // config never installs a tap that nothing will stop.
+        UserActivityMonitor.shared.start()
         specialActive = true
         let interval = config.intervalSeconds
         let buttonIdx = config.button.mouseButtonIndex
+        // Captured once rather than re-read from the actor every iteration:
+        // these only change via start*(), which restarts this task anyway.
+        let pMove = pauseOnMouseMove
+        let pWindow = pauseOnOwnWindow
         specialTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 // Skip the click if the user is actively moving the mouse,
                 // or if the cursor is hovering over any tinyClicker window
                 // (otherwise we'd click our own Stop All button etc.).
-                let pMove = await self.pauseOnMouseMove
-                let pWindow = await self.pauseOnOwnWindow
                 let userActive = pMove && UserActivityMonitor.shared.isUserActive(within: 0.5)
-                let onOwnWindow = pWindow ? await WindowGuard.cursorIsInOwnWindow() : false
+                let onOwnWindow = pWindow ? WindowGuard.cursorIsInOwnWindow() : false
                 if !userActive && !onOwnWindow {
                     _ = await self.acquire(priority: Int.max, recordingId: Self.specialSentinelId)
                     if Task.isCancelled { await self.release(); return }
@@ -97,12 +134,14 @@ actor PlaybackScheduler {
         specialTask?.cancel()
         specialTask = nil
         specialActive = false
+        stopMonitorIfIdle()
     }
 
     /// Stops everything — macros AND special clicker. Used by the F10 panic key.
     func panicStopAll() {
         stopSpecialClicker()
         stopAllInternal()
+        stopMonitorIfIdle()
     }
 
     private static func postClickAtCursor(buttonIdx: Int) async {

@@ -33,6 +33,11 @@ final class AppState: ObservableObject {
         self.recordings = store.load()
         self.selectedId = recordings.first?.id
         self.specialClicker = SpecialClicker.load()
+
+        // Publish window-frame snapshots for the off-main-thread hover guard.
+        // Started at launch (not at playback start) so the cache is always
+        // warm before the first click can fire.
+        WindowGuard.beginTracking()
         
         if UserDefaults.standard.object(forKey: "tinyClicker.pauseOnMouseMove") == nil {
             self.pauseOnMouseMove = true
