@@ -67,6 +67,16 @@ struct SpecialClickerView: View {
                 .font(.caption)
             Toggle("Pause when Cursor Over Window", isOn: $state.pauseOnOwnWindow)
                 .font(.caption)
+
+            Divider()
+                .padding(.vertical, 2)
+
+            Toggle("Lock Cursor Position", isOn: $state.lockCursorPosition)
+                .font(.caption)
+            Text("Remembers the cursor location when Play All starts and returns the pointer there after each macro finishes.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
         .background(

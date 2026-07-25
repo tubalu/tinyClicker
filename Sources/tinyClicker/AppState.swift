@@ -1,4 +1,5 @@
 import Combine
+import CoreGraphics
 import Foundation
 
 @MainActor
@@ -22,6 +23,13 @@ final class AppState: ObservableObject {
     @Published var pauseOnOwnWindow: Bool = true {
         didSet {
             UserDefaults.standard.set(pauseOnOwnWindow, forKey: "tinyClicker.pauseOnOwnWindow")
+        }
+    }
+    /// When on, Play All remembers the cursor location at start and returns the
+    /// pointer there after each macro finishes a pass. Opt-in (default off).
+    @Published var lockCursorPosition: Bool = false {
+        didSet {
+            UserDefaults.standard.set(lockCursorPosition, forKey: "tinyClicker.lockCursorPosition")
         }
     }
 
@@ -55,6 +63,9 @@ final class AppState: ObservableObject {
         } else {
             self.pauseOnOwnWindow = UserDefaults.standard.bool(forKey: "tinyClicker.pauseOnOwnWindow")
         }
+
+        // Opt-in: absent key means off.
+        self.lockCursorPosition = UserDefaults.standard.bool(forKey: "tinyClicker.lockCursorPosition")
 
         // Debounced persistence on any change.
         saveDebounce = $recordings
@@ -193,8 +204,12 @@ final class AppState: ObservableObject {
         guard !isPlayingAll else { return }
         let snapshot = recordings
         let specialSnapshot = specialClicker
+        // Captured once, at start: where the pointer sits when Play All begins.
+        // Same global-display coordinate space the scheduler warps into.
+        let cursorAnchor = lockCursorPosition ? CGEvent(source: nil)?.location : nil
         isPlayingAll = true
         Task {
+            await scheduler.setCursorAnchor(cursorAnchor)
             await scheduler.startAll(snapshot, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow)
             if specialSnapshot.enabled {
                 await scheduler.startSpecialClicker(specialSnapshot, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow)

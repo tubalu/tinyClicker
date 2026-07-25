@@ -33,6 +33,11 @@ actor PlaybackScheduler {
     private(set) var specialActive: Bool = false
     private var pauseOnMouseMove: Bool = true
     private var pauseOnOwnWindow: Bool = true
+    /// When non-nil, the cursor is warped back to this point after each macro
+    /// finishes a pass (the "Lock Cursor Position" feature). Set once at Play
+    /// All start and cleared on stop; deliberately untouched by `startAll`'s
+    /// mid-session restarts so a reorder/edit keeps the original anchor.
+    private var cursorAnchor: CGPoint? = nil
     /// Wall clock (`CFAbsoluteTime`) at which each waiting recording will next
     /// start playing. An entry exists only while that recording is sleeping
     /// out its interval — it's removed while the recording actually runs.
@@ -62,6 +67,12 @@ actor PlaybackScheduler {
     /// Returns true if any driver is active (whether running or waiting).
     func hasActiveDrivers() -> Bool { !drivers.isEmpty }
 
+    /// Sets (or clears) the cursor-lock anchor. Pass `nil` to disable. Called
+    /// by `AppState.playAll` with the pointer's location at Play All start.
+    func setCursorAnchor(_ anchor: CGPoint?) {
+        cursorAnchor = anchor
+    }
+
     /// Starts driving every enabled recording in the given order.
     /// The first recording in the array is highest priority.
     /// Stops any previously running drivers first.
@@ -89,6 +100,7 @@ actor PlaybackScheduler {
     /// Cancels every macro driver and any in-flight macro playback.
     /// Does NOT touch the special clicker. Idempotent.
     func stopAll() {
+        cursorAnchor = nil
         stopAllInternal()
         stopMonitorIfIdle()
     }
@@ -161,6 +173,7 @@ actor PlaybackScheduler {
 
     /// Stops everything — macros AND special clicker. Used by the F10 panic key.
     func panicStopAll() {
+        cursorAnchor = nil
         stopSpecialClicker()
         stopAllInternal()
         stopMonitorIfIdle()
@@ -246,6 +259,13 @@ actor PlaybackScheduler {
             case .completed:
                 cursor = 0
                 held = []
+                // Lock Cursor Position: return the pointer to the anchor now
+                // that this macro's pass is done, before it sleeps its
+                // interval. Warp posts no mouseMoved event, so it won't trip
+                // the user-activity pause.
+                if let anchor = cursorAnchor {
+                    CGWarpMouseCursorPosition(anchor)
+                }
                 // Sleep the configured interval before next iteration.
                 let interval = max(0, recording.intervalSeconds)
                 let nanos = UInt64(interval * 1_000_000_000)
