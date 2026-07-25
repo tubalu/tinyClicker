@@ -54,6 +54,22 @@ struct RecordingDetailView: View {
                     .foregroundColor(.secondary)
             }
 
+            // Left-aligned on its own row so it stays readable even when the
+            // window is mostly covered by another app.
+            if let due = state.nextFireAt[recording.id] {
+                NextRunCountdown(due: due, style: .prominent)
+            } else if state.nowPlayingId == recording.id {
+                HStack(spacing: 6) {
+                    Image(systemName: "play.fill")
+                    Text("Running now")
+                }
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.green)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color.green.opacity(0.12), in: Capsule())
+            }
+
             Divider()
 
             if recording.events.isEmpty {

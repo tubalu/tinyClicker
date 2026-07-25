@@ -63,6 +63,11 @@ struct RecordingRow: View {
                 Text("\(recording.events.count) events · \(String(format: "%.1fs", recording.duration))")
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                // Its own line, not tacked onto the metadata — this is the
+                // thing you actually watch for.
+                if let due = state.nextFireAt[recording.id] {
+                    NextRunCountdown(due: due)
+                }
             }
 
             Spacer()

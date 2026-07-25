@@ -8,6 +8,11 @@ final class AppState: ObservableObject {
     @Published var isRecording: Bool = false
     @Published var isPlayingAll: Bool = false
     @Published var nowPlayingId: UUID?
+    /// When each waiting recording will next fire. These are *deadlines*, not
+    /// countdowns — a value changes only once per cycle, so publishing it
+    /// costs one re-render per interval. The per-second ticking happens
+    /// locally in the row's `TimelineView`.
+    @Published var nextFireAt: [UUID: Date] = [:]
     @Published var specialClicker: SpecialClicker = .init()
     @Published var pauseOnMouseMove: Bool = true {
         didSet {
@@ -98,9 +103,18 @@ final class AppState: ObservableObject {
         nowPlayingPoll = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                let id = await self.scheduler.currentlyRunningId()
+                let status = await self.scheduler.status()
+                // CFAbsoluteTime is seconds since the 2001 reference date.
+                let due = status.nextFireAt.mapValues {
+                    Date(timeIntervalSinceReferenceDate: $0)
+                }
                 await MainActor.run {
-                    if self.nowPlayingId != id { self.nowPlayingId = id }
+                    if self.nowPlayingId != status.runningId {
+                        self.nowPlayingId = status.runningId
+                    }
+                    // Assign only on change: an unchanged deadline must not
+                    // republish, or this 10 Hz poll becomes a re-render storm.
+                    if self.nextFireAt != due { self.nextFireAt = due }
                 }
                 try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
             }
@@ -208,5 +222,6 @@ final class AppState: ObservableObject {
         // so the next Play All session re-runs it without re-toggling.
         Task { await scheduler.panicStopAll() }
         nowPlayingId = nil
+        nextFireAt = [:]
     }
 }

@@ -9,6 +9,14 @@ import Foundation
 /// is already running, the lower one pauses (releasing held inputs), the
 /// higher one runs to completion, then the lower one resumes from the same
 /// event cursor.
+/// Snapshot of what the scheduler is doing, for the UI's status poll.
+struct PlaybackStatus: Sendable {
+    let runningId: UUID?
+    /// Next start time per recording, as `CFAbsoluteTime`. Only contains
+    /// recordings currently sleeping out their interval.
+    let nextFireAt: [UUID: Double]
+}
+
 actor PlaybackScheduler {
     private struct Waiter {
         let priority: Int
@@ -25,6 +33,14 @@ actor PlaybackScheduler {
     private(set) var specialActive: Bool = false
     private var pauseOnMouseMove: Bool = true
     private var pauseOnOwnWindow: Bool = true
+    /// Wall clock (`CFAbsoluteTime`) at which each waiting recording will next
+    /// start playing. An entry exists only while that recording is sleeping
+    /// out its interval — it's removed while the recording actually runs.
+    private var nextFireAt: [UUID: Double] = [:]
+    /// Bumped every time the driver set is torn down. A driver only writes
+    /// `nextFireAt` while its epoch is current, so a cancelled task that
+    /// wakes up late can't resurrect a countdown for a stopped recording.
+    private var epoch: UInt64 = 0
     private static let specialSentinelId = UUID()
 
     /// Returns the id of the recording currently executing, if any.
@@ -38,6 +54,11 @@ actor PlaybackScheduler {
         runningId == Self.specialSentinelId ? nil : runningId
     }
 
+    /// Everything the UI polls for, fetched in a single actor hop.
+    func status() -> PlaybackStatus {
+        PlaybackStatus(runningId: currentlyRunningId(), nextFireAt: nextFireAt)
+    }
+
     /// Returns true if any driver is active (whether running or waiting).
     func hasActiveDrivers() -> Bool { !drivers.isEmpty }
 
@@ -48,10 +69,11 @@ actor PlaybackScheduler {
         self.pauseOnMouseMove = pauseOnMouseMove
         self.pauseOnOwnWindow = pauseOnOwnWindow
         stopAllInternal()
+        let currentEpoch = epoch
         for (index, recording) in recordings.enumerated() where recording.enabled {
             let driver = Task { [weak self] in
                 guard let self else { return }
-                await self.driveRecording(recording, priority: index)
+                await self.driveRecording(recording, priority: index, epoch: currentEpoch)
             }
             drivers[recording.id] = driver
         }
@@ -174,6 +196,8 @@ actor PlaybackScheduler {
             task.cancel()
         }
         drivers.removeAll()
+        nextFireAt.removeAll()
+        epoch &+= 1
         // Wake any waiters so they observe Task.isCancelled and exit.
         let pending = waiters
         waiters.removeAll()
@@ -189,15 +213,25 @@ actor PlaybackScheduler {
 
     // MARK: - Driver loop (one per enabled recording)
 
-    private func driveRecording(_ recording: Recording, priority: Int) async {
+    /// Records (or clears) a recording's next start time, ignoring writes from
+    /// drivers that have since been torn down.
+    private func setNextFire(_ time: Double?, for id: UUID, epoch: UInt64) {
+        guard epoch == self.epoch else { return }
+        nextFireAt[id] = time
+    }
+
+    private func driveRecording(_ recording: Recording, priority: Int, epoch: UInt64) async {
         var cursor = 0
         var held: [HeldInput] = []
         while !Task.isCancelled {
             let signal = await acquire(priority: priority, recordingId: recording.id)
             if Task.isCancelled {
+                setNextFire(nil, for: recording.id, epoch: epoch)
                 await release()
                 return
             }
+            // Holding the slot now — no longer counting down.
+            setNextFire(nil, for: recording.id, epoch: epoch)
             let outcome = await player.play(
                 recording,
                 from: cursor,
@@ -213,9 +247,14 @@ actor PlaybackScheduler {
                 cursor = 0
                 held = []
                 // Sleep the configured interval before next iteration.
-                let nanos = UInt64(max(0, recording.intervalSeconds) * 1_000_000_000)
+                let interval = max(0, recording.intervalSeconds)
+                let nanos = UInt64(interval * 1_000_000_000)
                 if nanos > 0 {
+                    // Published so the UI can count down to the next run.
+                    let due = CFAbsoluteTimeGetCurrent() + interval
+                    setNextFire(due, for: recording.id, epoch: epoch)
                     try? await Task.sleep(nanoseconds: nanos)
+                    setNextFire(nil, for: recording.id, epoch: epoch)
                 }
             case .paused(let at, let h):
                 cursor = at
@@ -224,6 +263,7 @@ actor PlaybackScheduler {
                 // spin tight when the user keeps wiggling the mouse.
                 try? await Task.sleep(nanoseconds: 50_000_000)
             case .cancelled:
+                setNextFire(nil, for: recording.id, epoch: epoch)
                 return
             }
         }
