@@ -143,6 +143,9 @@ actor PlaybackScheduler {
         // these only change via start*(), which restarts this task anyway.
         let pMove = pauseOnMouseMove
         let pWindow = pauseOnOwnWindow
+        // When Lock Cursor Position armed an anchor, every click lands there
+        // (a fixed target) instead of following the live cursor. nil → follow.
+        let anchor = cursorAnchor
         specialTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
@@ -154,7 +157,9 @@ actor PlaybackScheduler {
                 if !userActive && !onOwnWindow {
                     _ = await self.acquire(priority: Int.max, recordingId: Self.specialSentinelId)
                     if Task.isCancelled { await self.release(); return }
-                    await Self.postClickAtCursor(buttonIdx: buttonIdx)
+                    // Fixed anchor when locked, else wherever the cursor is now.
+                    let target = anchor ?? (CGEvent(source: nil)?.location ?? .zero)
+                    await Self.postClick(at: target, buttonIdx: buttonIdx)
                     await self.release()
                 }
                 let nanos = UInt64(interval * 1_000_000_000)
@@ -179,8 +184,7 @@ actor PlaybackScheduler {
         stopMonitorIfIdle()
     }
 
-    private static func postClickAtCursor(buttonIdx: Int) async {
-        let pos = CGEvent(source: nil)?.location ?? .zero
+    private static func postClick(at pos: CGPoint, buttonIdx: Int) async {
         let button: CGMouseButton = buttonIdx == 1 ? .right : .left
         let downType: CGEventType = buttonIdx == 1 ? .rightMouseDown : .leftMouseDown
         let upType: CGEventType = buttonIdx == 1 ? .rightMouseUp : .leftMouseUp
@@ -262,8 +266,10 @@ actor PlaybackScheduler {
                 // Lock Cursor Position: return the pointer to the anchor now
                 // that this macro's pass is done, before it sleeps its
                 // interval. Warp posts no mouseMoved event, so it won't trip
-                // the user-activity pause.
-                if let anchor = cursorAnchor {
+                // the user-activity pause. Skipped when the follow-cursor
+                // clicker is active — it already clicks at the anchor on every
+                // fire, so warping here would be redundant.
+                if let anchor = cursorAnchor, !specialActive {
                     CGWarpMouseCursorPosition(anchor)
                 }
                 // Sleep the configured interval before next iteration.

@@ -51,7 +51,7 @@ struct SpecialClickerView: View {
                 .labelsHidden()
             }
 
-            Text("When armed, runs alongside Play All — clicks at the current cursor position, yielding while any recording is playing and firing during their interval gaps. Does nothing until Play All is started.")
+            Text("When armed, runs alongside Play All — clicks at the current cursor position, yielding while any recording is playing and firing during their interval gaps. Does nothing until Play All is started. If Lock Cursor Position is on, clicks at the remembered location instead of the live cursor.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -73,7 +73,7 @@ struct SpecialClickerView: View {
 
             Toggle("Lock Cursor Position", isOn: $state.lockCursorPosition)
                 .font(.caption)
-            Text("Remembers the cursor location when Play All starts and returns the pointer there after each macro finishes.")
+            Text("Remembers the cursor location when Play All starts and returns the pointer there after each macro finishes. When the Follow Cursor Clicker is also enabled, it clicks at that remembered location every time instead.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -87,11 +87,22 @@ the pointer to its start spot after each macro run.
   mistake the warp for user activity.
 - **No polling loop / timer.** Purely event-driven off the completion path.
 
-## Noted interaction (documented, not a blocker)
+## Interaction with Follow Cursor (added v0.2.4)
 
-If run together with Follow Cursor, the pointer sits at the anchor during
-interval gaps, so the follow-cursor clicker would fire at the anchor. The two
-features are not expected to be combined.
+When **both** Lock Cursor Position and the Follow Cursor Clicker are on, the
+clicker clicks at the remembered anchor on **every** fire (a fixed target)
+instead of following the live cursor. The per-macro warp is then skipped
+(guarded by `specialActive` in `driveRecording`'s `.completed` branch) because
+the clicker already keeps clicks landing on the anchor — warping would be
+redundant.
+
+- Lock off, clicker on → clicks at live cursor (original behavior).
+- Lock on, clicker off → warps the pointer to the anchor after each macro.
+- Lock on, clicker on → clicks at the anchor every fire; no per-macro warp.
+
+Implementation: the anchor is captured into the special-clicker task in
+`startSpecialClicker`; `postClickAtCursor` became `postClick(at:buttonIdx:)` so
+the caller passes the resolved target (`anchor ?? live cursor`).
 
 ## Out of scope
 
