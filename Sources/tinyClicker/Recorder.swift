@@ -67,6 +67,11 @@ final class Recorder {
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
+        // Disabling and dropping our references is NOT enough: the window
+        // server keeps the tap registered for the process's lifetime, so every
+        // record session would permanently add one to the system-wide tap list
+        // (verified with `CGGetEventTapList`). Mirrors `UserActivityMonitor.stop()`.
+        CFMachPortInvalidate(port)
         tap = nil
         runLoopSource = nil
 
