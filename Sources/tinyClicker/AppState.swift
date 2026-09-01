@@ -40,6 +40,7 @@ final class AppState: ObservableObject {
     private let store = Store()
     private let recorder = Recorder()
     private let scheduler = PlaybackScheduler()
+    private let hud = PlaybackHUD()
     private var playAllHotKey: HotKey?
     private var recordHotKey: HotKey?
     private var saveDebounce: AnyCancellable?
@@ -284,6 +285,8 @@ final class AppState: ObservableObject {
         // Same global-display coordinate space the scheduler warps into.
         let cursorAnchor = lockCursorPosition ? CGEvent(source: nil)?.location : nil
         isPlayingAll = true
+        // Shrink to the floating Stop control; the main window drops to the Dock.
+        hud.show { [weak self] in self?.stopAllPlayback() }
         Task {
             await scheduler.setCursorAnchor(cursorAnchor)
             await scheduler.startAll(snapshot, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow)
@@ -309,6 +312,7 @@ final class AppState: ObservableObject {
 
     func stopAllPlayback() {
         isPlayingAll = false
+        hud.hide()
         // Keep `specialClicker.enabled` as-is — it's persistent armed state,
         // so the next Play All session re-runs it without re-toggling.
         Task { await scheduler.panicStopAll() }
