@@ -15,8 +15,10 @@ import SwiftUI
 @MainActor
 final class PlaybackHUD {
     private static let panelSize = NSSize(width: 210, height: 44)
-    private nonisolated static let topMargin: CGFloat = 12
-    private static let originDefaultsKey = "tinyClicker.playbackHUD.origin"
+    private nonisolated static let edgeMargin: CGFloat = 12
+    // v2: the default corner moved from top-center to top-left, so a
+    // previously persisted centered origin must not carry over.
+    private static let originDefaultsKey = "tinyClicker.playbackHUD.origin.v2"
 
     private var panel: NSPanel?
     private weak var miniaturizedWindow: NSWindow?
@@ -83,20 +85,20 @@ final class PlaybackHUD {
 
     // MARK: - Positioning
 
-    /// Persisted origin if it still lands on a screen, otherwise top-center of
-    /// the main display.
+    /// Persisted origin if it still lands on a screen, otherwise the top-left
+    /// corner of the main display.
     private func startOrigin() -> NSPoint {
         if let saved = savedOrigin(), isOnScreen(saved) { return saved }
         let screen = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
-        return Self.topCenterOrigin(screenFrame: screen, panelSize: Self.panelSize)
+        return Self.topLeftOrigin(screenFrame: screen, panelSize: Self.panelSize)
     }
 
-    /// Pure geometry: bottom-left origin that horizontally centers a panel of
-    /// `panelSize` in `screenFrame` and pins it near the top edge.
-    nonisolated static func topCenterOrigin(screenFrame: NSRect, panelSize: NSSize) -> NSPoint {
+    /// Pure geometry: bottom-left origin that pins a panel of `panelSize` to the
+    /// top-left corner of `screenFrame`, inset by `edgeMargin` on both edges.
+    nonisolated static func topLeftOrigin(screenFrame: NSRect, panelSize: NSSize) -> NSPoint {
         NSPoint(
-            x: screenFrame.midX - panelSize.width / 2,
-            y: screenFrame.maxY - panelSize.height - topMargin
+            x: screenFrame.minX + edgeMargin,
+            y: screenFrame.maxY - panelSize.height - edgeMargin
         )
     }
 
