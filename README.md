@@ -7,6 +7,9 @@ A native macOS recording clicker — record mouse clicks and key presses, then l
 - Records mouse-down / mouse-up (left/right/other) and key-down / key-up with modifier flags. A held key is captured as a single key-down…key-up pair (OS auto-repeat events are filtered out), so the hold duration is preserved on replay instead of producing a burst of repeated presses.
 - Replays with timing fidelity (preserves original inter-event delays within a recording).
 - **Editable event log** — after capture, edit each event's timing, mouse coordinates / button, or key code inline in the detail table, and delete unwanted events. Edits autosave. (Editing is locked while recording or while Play All is running.)
+- **Compose macros from other macros** — **Copy Events** lifts a recording's whole event list to an app-level clipboard; **Paste ▸ Append to End** drops it after the target's last event (re-timed so the pasted block starts 0.5s later and keeps all its internal timing), or **Replace All** overwrites. Also available from the sidebar right-click menu.
+- **Duplicate** a recording from the sidebar right-click menu — clones its events and interval into a new entry right below the original (same priority neighbourhood), named `<name> copy` and starting **disabled** so it can't fire before you've adapted it.
+- **Add events by hand** — the **Add** menu under the event table inserts a Click, Right Click, or Key Press at the end as a correctly paired down/up sequence; coordinates are pre-filled from the macro's last mouse event (or the live cursor) and are editable inline.
 - Per-recording interval between iterations; loops indefinitely until stopped.
 - Drag-to-reorder list — list order **is** the priority order (top = highest).
 - Pause/resume preemption with held-input safety (releases stuck buttons/keys on pause, re-presses on resume).
@@ -87,19 +90,24 @@ With a stable signing identity the code requirement stays constant across rebuil
 1. Click **New** in the toolbar (or ⌘N) to create a recording.
 2. Select it, then press **F9** (or click **Record**) to start. Perform mouse clicks / key presses. Press **F9** again to stop — using the hotkey avoids capturing the stop click itself.
 3. Set the interval (seconds between iterations) in the detail pane. You can also fine-tune individual captured events — edit their time / coordinates / key code directly in the event table, or delete rows with the trash button.
-4. Check **Enabled** on each recording you want to participate in playback.
-5. Drag rows in the sidebar to set priority (top = highest).
-6. (Optional) In the **Follow Cursor Clicker** section at the bottom of the sidebar, set a rate, choose Left or Right button, and toggle **Enabled** to arm it for the next Play All session.
-7. Click **Play All** (or press **F10**). The first eligible recording starts immediately; others wait per priority. If the Follow Cursor Clicker is armed, it runs alongside the macros and yields to them.
-8. Move the mouse → all playback pauses; stop moving for ~0.5s → it resumes.
-9. Move the cursor over tinyClicker's window → all playback pauses; move it away → it resumes.
-10. Press **F10** at any time to stop everything (it's a toggle — pressing it again while idle starts Play All).
+4. (Optional) Build the macro up without re-recording:
+   - **Reuse another macro** — select it, click **Copy Events**, select the target, then **Paste ▸ Append to End**. The pasted block is re-timed to start 0.5s after the target's last event, so ordering and internal timing both stay correct.
+   - **Clone for a variant** — right-click a recording in the sidebar → **Duplicate**, then edit the copy. It starts disabled, so it won't run until you check it.
+   - **Add one action** — use **Add** below the event table for a single Click / Right Click / Key Press, then fix up its coordinates in the table.
+5. Check **Enabled** on each recording you want to participate in playback.
+6. Drag rows in the sidebar to set priority (top = highest).
+7. (Optional) In the **Follow Cursor Clicker** section at the bottom of the sidebar, set a rate, choose Left or Right button, and toggle **Enabled** to arm it for the next Play All session.
+8. Click **Play All** (or press **F10**). The first eligible recording starts immediately; others wait per priority. If the Follow Cursor Clicker is armed, it runs alongside the macros and yields to them.
+9. Move the mouse → all playback pauses; stop moving for ~0.5s → it resumes.
+10. Move the cursor over tinyClicker's window → all playback pauses; move it away → it resumes.
+11. Press **F10** at any time to stop everything (it's a toggle — pressing it again while idle starts Play All).
 
 ## Architecture
 
 | File | Responsibility |
 |---|---|
 | `Models.swift` | `RecordedEvent`, `Recording` Codable structs |
+| `EventEditing.swift` | Pure event-list surgery shared by copy/paste, cloning, and manual add: fresh-id re-stamping, timestamp re-basing, action templates |
 | `Recorder.swift` | `CGEventTap` listener that captures global input |
 | `Player.swift` | `CGEvent.post` with cooperative pause + held-input tracking; also owns `InputSource` (the marked event source used to tag our own posted events) |
 | `Scheduler.swift` | Actor coordinating concurrent drivers + preemption (incl. follow-cursor driver at `Int.max` priority) |
@@ -116,7 +124,8 @@ With a stable signing identity the code requirement stays constant across rebuil
 
 - Mouse movement paths are not captured — only click positions. Replay teleports the cursor between clicks.
 - Scroll-wheel events are not recorded.
-- Event editing covers timing, mouse coordinates/button, and key codes; the event *kind* and modifier flags are fixed at capture, and new events can't be inserted from scratch (only re-recorded).
+- Event editing covers timing, mouse coordinates/button, and key codes. New events can be added via **Add** (Click / Right Click / Key Press) or pasted in from another macro, but an existing event's *kind* and modifier flags are still fixed at capture, and hand-added events always land at the end — there's no insert-in-the-middle (edit the timestamp afterwards to move one).
+- **Copy Events** always copies a whole macro; there's no way to copy a selected subset of rows.
 - Hotkeys are hard-coded (F9 record toggle, F10 Play All toggle) and not user-configurable yet.
 - The user-input pause and own-window pause both use fixed thresholds (0.5s settle for motion; immediate for window) — no slider to tune them.
 - No automated tests — global input automation is awkward to test reliably; verification is manual (see `~/.claude/plans/plan-create-macos-quiet-flute.md`).

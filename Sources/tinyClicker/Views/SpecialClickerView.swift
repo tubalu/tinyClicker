@@ -73,7 +73,7 @@ struct SpecialClickerView: View {
 
             Toggle("Lock Cursor Position", isOn: $state.lockCursorPosition)
                 .font(.caption)
-            Text("Remembers the cursor location when Play All starts and returns the pointer there after each macro finishes. When the Follow Cursor Clicker is also enabled, it clicks at that remembered location every time instead.")
+            Text("Remembers the cursor location when Play All starts. Only affects the Follow Cursor Clicker, which then clicks at that remembered location instead of following the live cursor — macro playback is unaffected.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -20,7 +20,8 @@ struct PlaybackStatus: Sendable {
 actor PlaybackScheduler {
     private struct Waiter {
         let priority: Int
-        let continuation: CheckedContinuation<Void, Never>
+        let recordingId: UUID
+        let continuation: CheckedContinuation<PauseSignal, Never>
     }
 
     private let player = Player()
@@ -33,10 +34,12 @@ actor PlaybackScheduler {
     private(set) var specialActive: Bool = false
     private var pauseOnMouseMove: Bool = true
     private var pauseOnOwnWindow: Bool = true
-    /// When non-nil, the cursor is warped back to this point after each macro
-    /// finishes a pass (the "Lock Cursor Position" feature). Set once at Play
-    /// All start and cleared on stop; deliberately untouched by `startAll`'s
-    /// mid-session restarts so a reorder/edit keeps the original anchor.
+    /// When non-nil, the follow-cursor clicker (`startSpecialClicker`) clicks
+    /// here instead of following the live cursor (the "Lock Cursor Position"
+    /// feature). Has no effect on macro playback — only the follow-cursor
+    /// clicker consults it. Set once at Play All start and cleared on stop;
+    /// deliberately untouched by `startAll`'s mid-session restarts so a
+    /// reorder/edit keeps the original anchor.
     private var cursorAnchor: CGPoint? = nil
     /// Wall clock (`CFAbsoluteTime`) at which each waiting recording will next
     /// start playing. An entry exists only while that recording is sleeping
@@ -151,9 +154,15 @@ actor PlaybackScheduler {
             while !Task.isCancelled {
                 // Skip the click if the user is actively moving the mouse,
                 // or if the cursor is hovering over any tinyClicker window
-                // (otherwise we'd click our own Stop All button etc.).
+                // (otherwise we'd click our own Stop All button etc.). The
+                // window check is skipped once an anchor is armed: the anchor
+                // is captured where the user clicked Play All (inside
+                // tinyClicker's own window), and every click warps the
+                // pointer back onto it — checking against the live cursor
+                // here would see "over own window" after the very first click
+                // and never fire again.
                 let userActive = pMove && UserActivityMonitor.shared.isUserActive(within: 0.5)
-                let onOwnWindow = pWindow ? WindowGuard.cursorIsInOwnWindow() : false
+                let onOwnWindow = (pWindow && anchor == nil) ? WindowGuard.cursorIsInOwnWindow() : false
                 if !userActive && !onOwnWindow {
                     _ = await self.acquire(priority: Int.max, recordingId: Self.specialSentinelId)
                     if Task.isCancelled { await self.release(); return }
@@ -188,6 +197,21 @@ actor PlaybackScheduler {
         let button: CGMouseButton = buttonIdx == 1 ? .right : .left
         let downType: CGEventType = buttonIdx == 1 ? .rightMouseDown : .leftMouseDown
         let upType: CGEventType = buttonIdx == 1 ? .rightMouseUp : .leftMouseUp
+
+        // Prepend a mouseMoved event before mouseDown, same as
+        // Player.postMouse does for recorded clicks — some target apps (e.g.
+        // Android Emulator) gate click handling on hover/focus state and
+        // never registered a down/up pair that arrives with no prior move.
+        if let moveEvent = CGEvent(
+            mouseEventSource: InputSource.marked,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: pos,
+            mouseButton: .left
+        ) {
+            moveEvent.post(tap: .cghidEventTap)
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
         if let down = CGEvent(
             mouseEventSource: InputSource.marked,
             mouseType: downType,
@@ -215,11 +239,12 @@ actor PlaybackScheduler {
         drivers.removeAll()
         nextFireAt.removeAll()
         epoch &+= 1
-        // Wake any waiters so they observe Task.isCancelled and exit.
+        // Wake any waiters (with a throwaway signal — none of them actually
+        // hold the slot) so they observe Task.isCancelled and exit.
         let pending = waiters
         waiters.removeAll()
         for waiter in pending {
-            waiter.continuation.resume()
+            waiter.continuation.resume(returning: PauseSignal())
         }
         // Signal the running playback (if any) to stop.
         // The driver task is already cancelled; Player checks Task.isCancelled.
@@ -263,15 +288,10 @@ actor PlaybackScheduler {
             case .completed:
                 cursor = 0
                 held = []
-                // Lock Cursor Position: return the pointer to the anchor now
-                // that this macro's pass is done, before it sleeps its
-                // interval. Warp posts no mouseMoved event, so it won't trip
-                // the user-activity pause. Skipped when the follow-cursor
-                // clicker is active — it already clicks at the anchor on every
-                // fire, so warping here would be redundant.
-                if let anchor = cursorAnchor, !specialActive {
-                    CGWarpMouseCursorPosition(anchor)
-                }
+                // Lock Cursor Position only drives the follow-cursor clicker's
+                // click target (see `startSpecialClicker`) — it has no effect
+                // on a macro's own playback, so nothing to do with the anchor
+                // here.
                 // Sleep the configured interval before next iteration.
                 let interval = max(0, recording.intervalSeconds)
                 let nanos = UInt64(interval * 1_000_000_000)
@@ -314,31 +334,48 @@ actor PlaybackScheduler {
                 return signal
             }
             if let current = runningPriority, priority < current {
-                // We're higher priority — request preemption then wait
-                // for the current playback to release the slot.
+                // We're higher priority — request preemption then wait for
+                // the current playback to release the slot. `pause()` awaits
+                // the (separate) PauseSignal actor, which can let the running
+                // task's own `release()` run first — so loop back and
+                // re-check `runningPriority` rather than falling straight
+                // into queueing below, or we'd park behind a slot that's
+                // already free.
                 await pauseSignal?.pause()
+                continue
             }
-            await waitForSlot(at: priority)
-        }
-    }
-
-    private func waitForSlot(at priority: Int) async {
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            waiters.append(Waiter(priority: priority, continuation: cont))
+            // Queue and wait to be handed the slot directly by `release()` —
+            // not just woken to re-race for it. A task that keeps
+            // re-acquiring the same priority in a tight loop (e.g. a macro
+            // with a ~0s interval) would otherwise always win that race
+            // before a parked lower-priority waiter (the follow-cursor
+            // clicker) ever got a turn, starving it indefinitely.
+            return await withCheckedContinuation { (cont: CheckedContinuation<PauseSignal, Never>) in
+                waiters.append(Waiter(priority: priority, recordingId: recordingId, continuation: cont))
+            }
         }
     }
 
     private func release() async {
-        runningPriority = nil
-        runningId = nil
-        pauseSignal = nil
-        // Wake the highest-priority waiter (lowest priority value).
-        guard !waiters.isEmpty else { return }
+        guard !waiters.isEmpty else {
+            runningPriority = nil
+            runningId = nil
+            pauseSignal = nil
+            return
+        }
+        // Hand the slot straight to the highest-priority waiter (lowest
+        // priority value) in the same actor turn, atomically — see the
+        // queueing comment in `acquire` for why this can't just clear the
+        // slot and resume the waiter to re-race for it.
         var bestIdx = 0
         for i in 1..<waiters.count where waiters[i].priority < waiters[bestIdx].priority {
             bestIdx = i
         }
         let waiter = waiters.remove(at: bestIdx)
-        waiter.continuation.resume()
+        runningPriority = waiter.priority
+        runningId = waiter.recordingId
+        let signal = PauseSignal()
+        pauseSignal = signal
+        waiter.continuation.resume(returning: signal)
     }
 }

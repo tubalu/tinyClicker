@@ -14,6 +14,9 @@ final class AppState: ObservableObject {
     /// costs one re-render per interval. The per-second ticking happens
     /// locally in the row's `TimelineView`.
     @Published var nextFireAt: [UUID: Date] = [:]
+    /// Events lifted by "Copy Events", awaiting a paste. Session-only —
+    /// published so paste controls can enable themselves and show the source.
+    @Published var eventClipboard: EventClipboard?
     @Published var specialClicker: SpecialClicker = .init()
     @Published var pauseOnMouseMove: Bool = true {
         didSet {
@@ -25,8 +28,9 @@ final class AppState: ObservableObject {
             UserDefaults.standard.set(pauseOnOwnWindow, forKey: "tinyClicker.pauseOnOwnWindow")
         }
     }
-    /// When on, Play All remembers the cursor location at start and returns the
-    /// pointer there after each macro finishes a pass. Opt-in (default off).
+    /// When on, Play All remembers the cursor location at start; the Follow
+    /// Cursor Clicker then clicks there instead of following the live cursor.
+    /// Macro playback is unaffected either way. Opt-in (default off).
     @Published var lockCursorPosition: Bool = false {
         didSet {
             UserDefaults.standard.set(lockCursorPosition, forKey: "tinyClicker.lockCursorPosition")
@@ -160,6 +164,78 @@ final class AppState: ObservableObject {
         if isPlayingAll {
             Task { await scheduler.startAll(recordings, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow) }
         }
+    }
+
+    // MARK: - Event editing (copy / paste / clone / manual add)
+
+    /// The one rule every event-editing command shares: never mutate a
+    /// recording the recorder or scheduler is touching, and never a locked
+    /// one. Mirrors `EventTable.isEditable` in the detail view.
+    ///
+    /// Because this already refuses while `isPlayingAll`, callers can write
+    /// `recordings[idx]` directly instead of going through `update(_:)` —
+    /// there is no live scheduler to restart, and the `@Published` change
+    /// still triggers the debounced autosave.
+    private func editableIndex(of id: UUID) -> Int? {
+        guard !isRecording, !isPlayingAll,
+              let idx = recordings.firstIndex(where: { $0.id == id }),
+              !recordings[idx].locked else { return nil }
+        return idx
+    }
+
+    var canEditEvents: Bool { !isRecording && !isPlayingAll }
+
+    /// Lifts a whole recording's events into the clipboard. Always safe —
+    /// reading never mutates, so locked recordings are copyable too.
+    func copyEvents(from id: UUID) {
+        guard let recording = recordings.first(where: { $0.id == id }),
+              !recording.events.isEmpty else { return }
+        eventClipboard = EventClipboard(sourceName: recording.name, events: recording.events)
+    }
+
+    func pasteEvents(into id: UUID, mode: PasteMode) {
+        guard let clipboard = eventClipboard, let idx = editableIndex(of: id) else { return }
+        switch mode {
+        case .append:
+            recordings[idx].events = EventEditing.appending(clipboard.events, to: recordings[idx].events)
+        case .replace:
+            recordings[idx].events = EventEditing.reidentified(clipboard.events)
+        }
+    }
+
+    /// Clones a recording into the slot directly below the original.
+    ///
+    /// Position is priority in this app, so appending to the bottom would
+    /// silently hand the clone the lowest priority. Locked recordings *can*
+    /// be duplicated — the source is only read.
+    func duplicateRecording(id: UUID) {
+        guard !isRecording, !isPlayingAll,
+              let idx = recordings.firstIndex(where: { $0.id == id }) else { return }
+        let source = recordings[idx]
+        let clone = Recording(
+            name: "\(source.name) copy",
+            events: EventEditing.reidentified(source.events),
+            intervalSeconds: source.intervalSeconds,
+            enabled: false,
+            locked: false
+        )
+        recordings.insert(clone, at: idx + 1)
+        selectedId = clone.id
+    }
+
+    /// Appends a hand-built action to the end of a recording.
+    ///
+    /// Coordinates are seeded from the last mouse event already in the macro,
+    /// falling back to the live cursor location — anything beats dropping a
+    /// click at (0, 0) and making the user type both numbers.
+    func addActivity(_ template: ActivityTemplate, to id: UUID) {
+        guard let idx = editableIndex(of: id) else { return }
+        let existing = recordings[idx].events
+        let start = (existing.last?.timestamp ?? 0) + EventEditing.joinGap
+        let seed = existing.last(where: { $0.position != nil })?.position
+            ?? CGEvent(source: nil)?.location
+            ?? .zero
+        recordings[idx].events += EventEditing.events(for: template, startingAt: start, at: seed)
     }
 
     // MARK: - Record

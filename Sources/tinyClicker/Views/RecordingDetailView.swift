@@ -4,6 +4,25 @@ struct RecordingDetailView: View {
     @EnvironmentObject var state: AppState
     let recording: Recording
 
+    /// Same rule `EventTable` and `AppState.editableIndex(of:)` enforce.
+    private var isEditable: Bool {
+        !state.isRecording && !state.isPlayingAll && !recording.locked
+    }
+
+    /// Names what's on the clipboard so it never becomes invisible state the
+    /// user has to remember.
+    private var pasteLabel: String {
+        guard let clipboard = state.eventClipboard else { return "Paste" }
+        return "Paste “\(clipboard.sourceName)” (\(clipboard.events.count))"
+    }
+
+    private var pasteHelp: String {
+        if state.eventClipboard == nil { return "Copy events from a recording first" }
+        if recording.locked { return "Recording is locked" }
+        if !state.canEditEvents { return "Not available while recording or playing" }
+        return "Append the copied events after this recording’s last event"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -18,6 +37,30 @@ struct RecordingDetailView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.title3)
                 .disabled(state.isRecording || state.isPlayingAll)
+
+                Button {
+                    state.copyEvents(from: recording.id)
+                } label: {
+                    Label("Copy Events", systemImage: "doc.on.doc")
+                }
+                .disabled(recording.events.isEmpty)
+                .help(recording.events.isEmpty
+                      ? "Nothing to copy — this recording has no events"
+                      : "Copy all \(recording.events.count) events to the clipboard")
+
+                Menu {
+                    Button("Append to End") {
+                        state.pasteEvents(into: recording.id, mode: .append)
+                    }
+                    Button("Replace All", role: .destructive) {
+                        state.pasteEvents(into: recording.id, mode: .replace)
+                    }
+                } label: {
+                    Label(pasteLabel, systemImage: "doc.on.clipboard")
+                }
+                .fixedSize()
+                .disabled(state.eventClipboard == nil || !isEditable)
+                .help(pasteHelp)
             }
 
             HStack(spacing: 16) {
@@ -79,16 +122,51 @@ struct RecordingDetailView: View {
                         .foregroundColor(.secondary)
                     Text("No events recorded yet.")
                         .foregroundColor(.secondary)
-                    Text("Press Record in the toolbar to capture mouse + key input.")
+                    Text("Press Record in the toolbar to capture mouse + key input, or use Add below to build one by hand.")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 EventTable(recording: recording)
             }
+
+            AddActivityBar(recording: recording, isEditable: isEditable)
         }
         .padding(12)
+    }
+}
+
+/// Appends a hand-built action to the end of the recording. Each choice
+/// expands into the down/up pair the player needs, then becomes ordinary
+/// editable rows in the table above.
+private struct AddActivityBar: View {
+    @EnvironmentObject var state: AppState
+    let recording: Recording
+    let isEditable: Bool
+
+    var body: some View {
+        HStack {
+            Menu {
+                ForEach(ActivityTemplate.allCases) { template in
+                    Button {
+                        state.addActivity(template, to: recording.id)
+                    } label: {
+                        Label(template.label, systemImage: template.symbol)
+                    }
+                }
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .fixedSize()
+            .disabled(!isEditable)
+            .help(isEditable
+                  ? "Add a single action to the end, then edit its coordinates above"
+                  : "Not available while recording, playing, or locked")
+
+            Spacer()
+        }
     }
 }
 

@@ -37,6 +37,21 @@ actor PauseSignal {
 }
 
 final class Player {
+    private let isUserActive: @Sendable (Double) -> Bool
+    private let cursorIsInOwnWindow: @Sendable () -> Bool
+
+    init(
+        isUserActive: @escaping @Sendable (Double) -> Bool = {
+            UserActivityMonitor.shared.isUserActive(within: $0)
+        },
+        cursorIsInOwnWindow: @escaping @Sendable () -> Bool = {
+            WindowGuard.cursorIsInOwnWindow()
+        }
+    ) {
+        self.isUserActive = isUserActive
+        self.cursorIsInOwnWindow = cursorIsInOwnWindow
+    }
+
     /// Plays `recording` starting at index `cursor`, optionally re-pressing
     /// inputs that were held when a previous play call was paused.
     ///
@@ -71,11 +86,11 @@ final class Player {
                 await releaseAll(currentlyHeld)
                 return .paused(at: i, held: currentlyHeld)
             }
-            if pauseOnMouseMove && UserActivityMonitor.shared.isUserActive(within: 0.5) {
+            if pauseOnMouseMove && isUserActive(0.5) {
                 await releaseAll(currentlyHeld)
                 return .paused(at: i, held: currentlyHeld)
             }
-            let ownWindow = pauseOnOwnWindow ? WindowGuard.cursorIsInOwnWindow() : false
+            let ownWindow = pauseOnOwnWindow ? cursorIsInOwnWindow() : false
             if ownWindow {
                 await releaseAll(currentlyHeld)
                 return .paused(at: i, held: currentlyHeld)
@@ -97,17 +112,21 @@ final class Player {
                         await releaseAll(currentlyHeld)
                         return .paused(at: i, held: currentlyHeld)
                     }
-                    if pauseOnMouseMove && UserActivityMonitor.shared.isUserActive(within: 0.5) {
+                    if pauseOnMouseMove && isUserActive(0.5) {
                         await releaseAll(currentlyHeld)
                         return .paused(at: i, held: currentlyHeld)
                     }
-                    let innerOwnWindow = pauseOnOwnWindow ? WindowGuard.cursorIsInOwnWindow() : false
+                    let innerOwnWindow = pauseOnOwnWindow ? cursorIsInOwnWindow() : false
                     if innerOwnWindow {
                         await releaseAll(currentlyHeld)
                         return .paused(at: i, held: currentlyHeld)
                     }
                     let remaining = deadline - CFAbsoluteTimeGetCurrent()
-                    let slice = min(remaining, 0.02) // 20ms slices
+                    // Mouse activity has a 500ms settle window. Polling at
+                    // 10Hz keeps pause latency low without waking the process
+                    // 50 times per second throughout hours-long playback;
+                    // task cancellation still interrupts the sleep at once.
+                    let slice = min(remaining, 0.10)
                     if slice > 0 {
                         try? await Task.sleep(nanoseconds: UInt64(slice * 1_000_000_000))
                     }

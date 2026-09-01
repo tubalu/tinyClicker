@@ -23,6 +23,7 @@ struct RecordingListView: View {
                 ForEach(state.recordings) { recording in
                     RecordingRow(recording: recording)
                         .tag(recording.id)
+                        .contextMenu { RecordingMenu(recording: recording) }
                 }
                 .onMove { from, to in state.move(from: from, to: to) }
                 .onDelete { indexSet in
@@ -36,6 +37,37 @@ struct RecordingListView: View {
             Divider()
             SpecialClickerView()
         }
+    }
+}
+
+/// Right-click actions on a sidebar row. Duplicating and copying only read
+/// the source, so both stay available on locked recordings; anything that
+/// writes defers to `AppState`, which refuses on locked/busy targets anyway.
+private struct RecordingMenu: View {
+    @EnvironmentObject var state: AppState
+    let recording: Recording
+
+    var body: some View {
+        Button("Duplicate") { state.duplicateRecording(id: recording.id) }
+            .disabled(!state.canEditEvents)
+
+        Divider()
+
+        Button("Copy Events") { state.copyEvents(from: recording.id) }
+            .disabled(recording.events.isEmpty)
+
+        Button(pasteTitle) { state.pasteEvents(into: recording.id, mode: .append) }
+            .disabled(state.eventClipboard == nil || !state.canEditEvents || recording.locked)
+
+        Divider()
+
+        Button("Delete", role: .destructive) { state.deleteRecording(id: recording.id) }
+            .disabled(recording.locked || !state.canEditEvents)
+    }
+
+    private var pasteTitle: String {
+        guard let clipboard = state.eventClipboard else { return "Paste Events" }
+        return "Append \(clipboard.events.count) Events from “\(clipboard.sourceName)”"
     }
 }
 

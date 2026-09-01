@@ -10,6 +10,11 @@ let package = Package(
         .executableTarget(
             name: "tinyClicker",
             path: "Sources/tinyClicker"
+        ),
+        .testTarget(
+            name: "tinyClickerTests",
+            dependencies: ["tinyClicker"],
+            path: "Tests/tinyClickerTests"
         )
     ]
 )
