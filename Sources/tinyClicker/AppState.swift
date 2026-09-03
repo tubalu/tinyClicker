@@ -286,7 +286,10 @@ final class AppState: ObservableObject {
         let cursorAnchor = lockCursorPosition ? CGEvent(source: nil)?.location : nil
         isPlayingAll = true
         // Shrink to the floating Stop control; the main window drops to the Dock.
-        hud.show { [weak self] in self?.stopAllPlayback() }
+        // The HUD counts down the longest interval among the checked macros.
+        hud.show(longestInterval: snapshot.longestPlayableInterval) { [weak self] in
+            self?.stopAllPlayback()
+        }
         Task {
             await scheduler.setCursorAnchor(cursorAnchor)
             await scheduler.startAll(snapshot, pauseOnMouseMove: pauseOnMouseMove, pauseOnOwnWindow: pauseOnOwnWindow)

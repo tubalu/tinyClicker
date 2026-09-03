@@ -47,8 +47,8 @@ struct NextRunCountdown: View {
     }
 
     /// `m:ss` past a minute, plain seconds below it — a 110s interval reads
-    /// better as "1:50" than "110s".
-    private static func format(_ remaining: TimeInterval) -> String {
+    /// better as "1:50" than "110s". Shared with the Play All HUD countdown.
+    static func format(_ remaining: TimeInterval) -> String {
         let total = Int(remaining.rounded())
         guard total >= 60 else { return "\(total)s" }
         return String(format: "%d:%02d", total / 60, total % 60)

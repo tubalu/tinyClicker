@@ -26,11 +26,17 @@ final class PlaybackHUD {
 
     /// Shows the floating control and miniaturizes the main window.
     /// `onStop` is invoked when the panel's Stop button is clicked.
-    func show(onStop: @escaping () -> Void) {
+    /// `longestInterval` drives the capsule's looping countdown; pass `nil`
+    /// (no macro checked) to fall back to a plain "Playing…" label.
+    func show(longestInterval: TimeInterval?, onStop: @escaping () -> Void) {
         self.onStop = onStop
 
         let panel = panel ?? makePanel()
         self.panel = panel
+
+        // Rebuilt every session so the countdown reflects the current set of
+        // checked macros; the panel that hosts it is cached.
+        panel.contentView = makeHostingView(longestInterval: longestInterval)
 
         // Capture the main window before it goes away — once miniaturized it is
         // no longer `isVisible`, so we could not find it again in `hide()`.
@@ -73,14 +79,16 @@ final class PlaybackHUD {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        return panel
+    }
 
+    private func makeHostingView(longestInterval: TimeInterval?) -> NSView {
         let hosting = NSHostingView(
-            rootView: PlaybackHUDView { [weak self] in self?.onStop?() }
+            rootView: PlaybackHUDView(longestInterval: longestInterval) { [weak self] in self?.onStop?() }
         )
         hosting.frame = NSRect(origin: .zero, size: Self.panelSize)
         hosting.autoresizingMask = [.width, .height]
-        panel.contentView = hosting
-        return panel
+        return hosting
     }
 
     // MARK: - Positioning
@@ -122,8 +130,11 @@ final class PlaybackHUD {
 /// the Stop button. Dragging anywhere on it moves the panel
 /// (`isMovableByWindowBackground`).
 private struct PlaybackHUDView: View {
+    let longestInterval: TimeInterval?
     let onStop: () -> Void
     @State private var pulsing = false
+    /// Anchor for the looping countdown — captured once when the capsule appears.
+    @State private var startedAt = Date()
 
     var body: some View {
         HStack(spacing: 10) {
@@ -133,8 +144,7 @@ private struct PlaybackHUDView: View {
                 .opacity(pulsing ? 0.35 : 1)
                 .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulsing)
 
-            Text("Playing…")
-                .font(.callout.weight(.medium))
+            status
 
             Spacer(minLength: 4)
 
@@ -153,5 +163,27 @@ private struct PlaybackHUDView: View {
                 .strokeBorder(.white.opacity(0.12))
         )
         .onAppear { pulsing = true }
+    }
+
+    /// A looping countdown of the longest checked-macro interval, or a plain
+    /// "Playing…" when nothing is checked. `TimelineView` ticks this label
+    /// locally, once a second, so the panel is the only thing redrawing.
+    @ViewBuilder
+    private var status: some View {
+        if let interval = longestInterval, interval > 0 {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let elapsed = context.date.timeIntervalSince(startedAt)
+                let remaining = interval - elapsed.truncatingRemainder(dividingBy: interval)
+                HStack(spacing: 4) {
+                    Image(systemName: "timer")
+                    Text(NextRunCountdown.format(max(0, remaining)))
+                }
+                .font(.callout.weight(.medium))
+                .monospacedDigit()
+            }
+        } else {
+            Text("Playing…")
+                .font(.callout.weight(.medium))
+        }
     }
 }

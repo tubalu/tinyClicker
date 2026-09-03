@@ -81,3 +81,14 @@ struct Recording: Codable, Identifiable, Equatable {
         events.last?.timestamp ?? 0
     }
 }
+
+extension Sequence where Element == Recording {
+    /// Longest interval among checked macros that actually have something to
+    /// replay. `nil` when nothing is checked — the Play All HUD then shows a
+    /// plain "Playing…" instead of a countdown.
+    var longestPlayableInterval: TimeInterval? {
+        filter { $0.enabled && !$0.events.isEmpty }
+            .map(\.intervalSeconds)
+            .max()
+    }
+}
